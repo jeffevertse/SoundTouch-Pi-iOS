@@ -4,12 +4,6 @@
 <dict>
 	<key>CFBundleName</key>
 	<string>SoundTouch Pi</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Needed to reach the SoundTouch Pi controller on your home network.</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_http._tcp</string>
-	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSExceptionDomains</key>
@@ -21,5 +15,15 @@
 			</dict>
 		</dict>
 	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Needed to reach the SoundTouch Pi controller on your home network.</string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
 </dict>
 </plist>

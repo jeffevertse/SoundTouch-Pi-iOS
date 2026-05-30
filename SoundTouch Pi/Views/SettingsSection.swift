@@ -83,7 +83,7 @@ struct SettingsSection: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .padding(.horizontal, 16)
 
-            Text("Creates "SoundTouch-Pi-Setup" to reconfigure Wi-Fi from any device")
+            Text("Creates \"SoundTouch-Pi-Setup\" to reconfigure Wi-Fi from any device")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 20)
