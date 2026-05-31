@@ -113,6 +113,11 @@ final class APIClient {
         try await post("/api/wifi/hotspot/stop")
     }
 
+    func reconnect(host: String? = nil) async throws -> ReconnectResponse {
+        struct Body: Encodable { let host: String? }
+        return try await post("/api/device/reconnect", body: host.map { Body(host: $0) })
+    }
+
     func reboot() async throws -> MessageResponse {
         try await post("/api/system/reboot")
     }

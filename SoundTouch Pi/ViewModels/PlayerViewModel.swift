@@ -13,6 +13,7 @@ final class PlayerViewModel: ObservableObject {
     @Published var toastMessage: String?
     @Published var isSyncing = false
     @Published var syncResult: String?
+    @Published var isDeviceOffline = false
 
     private let api = APIClient.shared
     private let sse: SSEClient
@@ -40,7 +41,9 @@ final class PlayerViewModel: ObservableObject {
             let r = try await api.status()
             nowPlaying = r.nowPlaying
             if let vol = r.volume { volume = vol.actual }
+            isDeviceOffline = false
         } catch {
+            isDeviceOffline = true
             showError(error)
         }
     }
@@ -104,6 +107,17 @@ final class PlayerViewModel: ObservableObject {
         } catch {
             showError(error)
         }
+    }
+
+    // MARK: - Reconnect
+
+    func reconnect(host: String? = nil) async throws -> ReconnectResponse {
+        let r = try await api.reconnect(host: host)
+        if r.ok {
+            isDeviceOffline = false
+            await loadAll()
+        }
+        return r
     }
 
     // MARK: - Hardware sync

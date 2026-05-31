@@ -141,6 +141,13 @@ struct SyncResponse: Decodable {
     let results: [SyncResult]
 }
 
+struct ReconnectResponse: Decodable {
+    let ok: Bool
+    let host: String?
+    let resyncing: Bool?
+    let error: String?
+}
+
 // MARK: - SSE events
 
 enum SSEEvent {

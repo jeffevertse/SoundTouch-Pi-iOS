@@ -10,9 +10,79 @@ struct SettingsSection: View {
     @State private var rebootArmed = false
     @State private var rebootMessage: String?
     @State private var rebootArmTask: Task<Void, Never>?
+    @State private var isReconnecting = false
+    @State private var reconnectMessage: String?
+    @State private var reconnectFailed = false
+    @State private var manualIP = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Reconnect section — only shown when device is unreachable
+            if vm.isDeviceOffline {
+                Text("DEVICE")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .kerning(0.5)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+
+                VStack(spacing: 0) {
+                    Button { Task { await doReconnect(host: nil) } } label: {
+                        HStack(spacing: 12) {
+                            iconBadge("arrow.triangle.2.circlepath", color: Color(uiColor: .systemOrange))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(isReconnecting ? "Scanning for device…" : "Find / Reconnect Device")
+                                    .foregroundStyle(.primary)
+                                Text("Use after a factory reset or IP change")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if isReconnecting {
+                                ProgressView().scaleEffect(0.8)
+                            } else {
+                                Image(systemName: "chevron.right")
+                                    .foregroundStyle(.tertiary)
+                                    .font(.caption)
+                            }
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 12)
+                    }
+                    .disabled(isReconnecting)
+
+                    if reconnectFailed {
+                        Divider().padding(.leading, 56)
+                        HStack(spacing: 8) {
+                            TextField("IP address (e.g. 192.168.1.62)", text: $manualIP)
+                                .keyboardType(.decimalPad)
+                                .autocorrectionDisabled()
+                                .padding(10)
+                                .background(Color(uiColor: .tertiarySystemGroupedBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            Button("Connect") {
+                                Task { await doReconnect(host: manualIP.trimmingCharacters(in: .whitespaces)) }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(manualIP.trimmingCharacters(in: .whitespaces).isEmpty || isReconnecting)
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                    }
+                }
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 16)
+
+                if let msg = reconnectMessage {
+                    Text(msg)
+                        .font(.caption)
+                        .foregroundStyle(reconnectFailed ? Color(uiColor: .systemRed) : .secondary)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 6)
+                }
+
+                Spacer().frame(height: 24)
+            }
+
             // Wi-Fi section
             Text("WI-FI")
                 .font(.caption.weight(.medium))
@@ -152,6 +222,27 @@ struct SettingsSection: View {
             return "Hotspot: \(s.ip ?? "10.42.0.1")"
         default:
             return "Not connected"
+        }
+    }
+
+    private func doReconnect(host: String?) async {
+        isReconnecting = true
+        reconnectMessage = nil
+        reconnectFailed = false
+        defer { isReconnecting = false }
+        do {
+            let r = try await vm.reconnect(host: host)
+            if r.ok {
+                reconnectMessage = "Connected to \(r.host ?? host ?? "device") — resyncing presets…"
+                reconnectFailed = false
+                vm.toast("Device reconnected!")
+            } else {
+                reconnectMessage = r.error ?? "Device not found."
+                reconnectFailed = true
+            }
+        } catch {
+            reconnectMessage = error.localizedDescription
+            reconnectFailed = true
         }
     }
 
