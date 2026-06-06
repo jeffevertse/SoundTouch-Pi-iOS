@@ -118,6 +118,10 @@ final class APIClient {
         return try await post("/api/device/reconnect", body: host.map { Body(host: $0) })
     }
 
+    func update() async throws -> MessageResponse {
+        try await post("/api/system/update")
+    }
+
     func reboot() async throws -> MessageResponse {
         try await post("/api/system/reboot")
     }

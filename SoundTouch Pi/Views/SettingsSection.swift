@@ -7,6 +7,8 @@ struct SettingsSection: View {
     @State private var networks: [WifiNetwork] = []
     @State private var isScanning = false
     @State private var showScanSheet = false
+    @State private var isUpdating = false
+    @State private var updateMessage: String?
     @State private var rebootArmed = false
     @State private var rebootMessage: String?
     @State private var rebootArmTask: Task<Void, Never>?
@@ -169,6 +171,20 @@ struct SettingsSection: View {
                 .padding(.bottom, 8)
 
             VStack(spacing: 0) {
+                Button { Task { await updateTapped() } } label: {
+                    HStack(spacing: 12) {
+                        iconBadge("arrow.up.circle", color: Color(uiColor: .systemGreen))
+                        Text(isUpdating ? "Updating…" : "Update Pi")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        if isUpdating { ProgressView().scaleEffect(0.8) }
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+                }
+                .disabled(isUpdating)
+
+                Divider().padding(.leading, 56)
+
                 Button { rebootTapped() } label: {
                     HStack(spacing: 12) {
                         iconBadge("arrow.clockwise", color: Color(uiColor: .systemRed))
@@ -182,6 +198,15 @@ struct SettingsSection: View {
             .background(Color(uiColor: .secondarySystemGroupedBackground))
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .padding(.horizontal, 16)
+
+            if let msg = updateMessage {
+                Text(msg)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 6)
+            }
 
             if let msg = rebootMessage {
                 Text(msg)
@@ -266,6 +291,14 @@ struct SettingsSection: View {
         vm.toast(r?.message ?? "Done")
         try? await Task.sleep(for: .seconds(5))
         loadWifi()
+    }
+
+    private func updateTapped() async {
+        isUpdating = true
+        updateMessage = nil
+        let r = try? await APIClient.shared.update()
+        updateMessage = r?.message ?? "Update started…\nThe service will restart when done."
+        isUpdating = false
     }
 
     private func rebootTapped() {
