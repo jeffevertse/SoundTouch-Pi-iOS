@@ -7,6 +7,7 @@ struct SettingsSection: View {
     @State private var networks: [WifiNetwork] = []
     @State private var isScanning = false
     @State private var showScanSheet = false
+    @State private var authToken: String = APIClient.shared.authToken
     @State private var isUpdating = false
     @State private var updateMessage: String?
     @State private var rebootArmed = false
@@ -19,6 +20,57 @@ struct SettingsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+
+            // ── Security ────────────────────────────────────────────────
+            Text("SECURITY")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .kerning(0.5)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    iconBadge("key", color: .accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Auth Token")
+                            .foregroundStyle(.primary)
+                        Text("Copy from the web UI System section")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+
+                Divider().padding(.leading, 56)
+
+                HStack(spacing: 8) {
+                    SecureField("Paste token here", text: $authToken)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .onSubmit { saveToken() }
+                        .padding(10)
+                        .background(Color(uiColor: .tertiarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    Button("Save") { saveToken() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(authToken.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+            }
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 16)
+
+            Text("Find the token in the web UI System section (soundtouch-pi.local:5000)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 20)
+                .padding(.top, 6)
+                .padding(.bottom, 24)
+
             // Reconnect section — only shown when device is unreachable
             if vm.isDeviceOffline {
                 Text("DEVICE")
@@ -291,6 +343,13 @@ struct SettingsSection: View {
         vm.toast(r?.message ?? "Done")
         try? await Task.sleep(for: .seconds(5))
         loadWifi()
+    }
+
+    private func saveToken() {
+        let token = authToken.trimmingCharacters(in: .whitespaces)
+        APIClient.shared.authToken = token
+        vm.toast("Token saved")
+        Task { await vm.loadAll() }
     }
 
     private func updateTapped() async {

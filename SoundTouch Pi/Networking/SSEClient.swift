@@ -13,7 +13,10 @@ final class SSEClient {
         task = Task { [url] in
             while !Task.isCancelled {
                 do {
-                    let (stream, _) = try await URLSession.shared.bytes(from: url)
+                    var req = URLRequest(url: url)
+                    let token = APIClient.shared.authToken
+                    if !token.isEmpty { req.setValue(token, forHTTPHeaderField: "X-Auth-Token") }
+                    let (stream, _) = try await APIClient.shared.session.bytes(for: req)
                     for try await line in stream.lines {
                         guard line.hasPrefix("data: ") else { continue }
                         let json = String(line.dropFirst(6))

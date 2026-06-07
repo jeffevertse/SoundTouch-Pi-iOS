@@ -1,50 +1,109 @@
 import Foundation
+import Security
 
 enum APIError: LocalizedError {
     case badStatus(Int)
     case serverError(String)
     case noData
+    case unauthorized
 
     var errorDescription: String? {
         switch self {
         case .badStatus(let code): return "Server returned \(code)"
         case .serverError(let msg): return msg
         case .noData: return "No data received"
+        case .unauthorized: return "Invalid auth token — check Settings"
         }
     }
 }
 
+// MARK: - Cert pinning delegate
+
+final class PinningDelegate: NSObject, URLSessionDelegate {
+    static let shared = PinningDelegate()
+
+    private let pinnedKey: SecKey? = {
+        guard let url = Bundle.main.url(forResource: "soundtouch-pi", withExtension: "cer"),
+              let data = try? Data(contentsOf: url),
+              let cert = SecCertificateCreateWithData(nil, data as CFData)
+        else { return nil }
+        return SecCertificateCopyKey(cert)
+    }()
+
+    func urlSession(
+        _ session: URLSession,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let serverTrust = challenge.protectionSpace.serverTrust,
+              let serverCert  = SecTrustCopyCertificateChain(serverTrust) as? [SecCertificate],
+              let firstCert   = serverCert.first,
+              let serverKey   = SecCertificateCopyKey(firstCert),
+              let pinned      = pinnedKey
+        else {
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+
+        // Compare public key data — tolerates cert renewal as long as the key matches
+        let serverKeyData = SecKeyCopyExternalRepresentation(serverKey, nil) as Data?
+        let pinnedKeyData = SecKeyCopyExternalRepresentation(pinned,     nil) as Data?
+
+        if serverKeyData == pinnedKeyData {
+            completionHandler(.useCredential, URLCredential(trust: serverTrust))
+        } else {
+            completionHandler(.cancelAuthenticationChallenge, nil)
+        }
+    }
+}
+
+// MARK: - API client
+
 final class APIClient {
     static let shared = APIClient()
-    let base = URL(string: "http://soundtouch-pi.local:5000")!
+    let base = URL(string: "https://soundtouch-pi.local:5000")!
 
-    private let session: URLSession = {
+    private static let tokenKey = "soundtouch_pi_auth_token"
+
+    var authToken: String {
+        get { UserDefaults.standard.string(forKey: Self.tokenKey) ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: Self.tokenKey) }
+    }
+
+    let session: URLSession = {
         let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = 10
-        return URLSession(configuration: cfg)
+        return URLSession(configuration: cfg, delegate: PinningDelegate.shared, delegateQueue: nil)
     }()
 
     // MARK: - Generic helpers
 
     private func get<T: Decodable>(_ path: String) async throws -> T {
-        let (data, response) = try await session.data(from: base.appending(path: path))
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw APIError.badStatus(http.statusCode)
+        var req = URLRequest(url: base.appending(path: path))
+        let token = authToken
+        if !token.isEmpty { req.setValue(token, forHTTPHeaderField: "X-Auth-Token") }
+        let (data, response) = try await session.data(for: req)
+        if let http = response as? HTTPURLResponse {
+            if http.statusCode == 401 { throw APIError.unauthorized }
+            if !(200..<300).contains(http.statusCode) { throw APIError.badStatus(http.statusCode) }
         }
-        let decoded = try JSONDecoder().decode(T.self, from: data)
-        return decoded
+        return try JSONDecoder().decode(T.self, from: data)
     }
 
     private func post<T: Decodable>(_ path: String, body: Encodable? = nil) async throws -> T {
         var req = URLRequest(url: base.appending(path: path))
         req.httpMethod = "POST"
+        let token = authToken
+        if !token.isEmpty { req.setValue(token, forHTTPHeaderField: "X-Auth-Token") }
         if let body {
             req.httpBody = try JSONEncoder().encode(body)
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         let (data, response) = try await session.data(for: req)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw APIError.badStatus(http.statusCode)
+        if let http = response as? HTTPURLResponse {
+            if http.statusCode == 401 { throw APIError.unauthorized }
+            if !(200..<300).contains(http.statusCode) { throw APIError.badStatus(http.statusCode) }
         }
         return try JSONDecoder().decode(T.self, from: data)
     }
