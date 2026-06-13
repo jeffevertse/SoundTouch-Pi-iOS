@@ -66,9 +66,27 @@ final class APIClient {
 
     private static let tokenKey = "soundtouch_pi_auth_token"
 
+    /// Auth token, stored in the Keychain (not UserDefaults). Reads transparently
+    /// migrate any token previously saved in UserDefaults, then clear it.
     var authToken: String {
-        get { UserDefaults.standard.string(forKey: Self.tokenKey) ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: Self.tokenKey) }
+        get {
+            if let token = KeychainStore.read(Self.tokenKey) { return token }
+            if let legacy = UserDefaults.standard.string(forKey: Self.tokenKey), !legacy.isEmpty {
+                KeychainStore.save(legacy, account: Self.tokenKey)
+                UserDefaults.standard.removeObject(forKey: Self.tokenKey)
+                return legacy
+            }
+            return ""
+        }
+        set {
+            if newValue.isEmpty {
+                KeychainStore.delete(Self.tokenKey)
+            } else {
+                KeychainStore.save(newValue, account: Self.tokenKey)
+            }
+            // Never leave a copy behind in UserDefaults.
+            UserDefaults.standard.removeObject(forKey: Self.tokenKey)
+        }
     }
 
     let session: URLSession = {
@@ -190,5 +208,57 @@ final class APIClient {
 private extension URL {
     func appending(path: String) -> URL {
         appendingPathComponent(path)
+    }
+}
+
+// MARK: - Keychain-backed credential storage
+
+/// Minimal wrapper around a generic-password Keychain item. Used for the auth
+/// token so it is stored in the system Keychain rather than UserDefaults.
+enum KeychainStore {
+    private static let service = "com.jeffevertse.soundtouchpi"
+
+    static func read(_ account: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String:       kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String:  true,
+            kSecMatchLimit as String:  kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data,
+              let value = String(data: data, encoding: .utf8)
+        else { return nil }
+        return value
+    }
+
+    static func save(_ value: String, account: String) {
+        guard let data = value.data(using: .utf8) else { return }
+        let match: [String: Any] = [
+            kSecClass as String:       kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        let attributes: [String: Any] = [
+            kSecValueData as String:      data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+        ]
+        // Update in place if it exists, otherwise add it.
+        if SecItemUpdate(match as CFDictionary, attributes as CFDictionary) == errSecItemNotFound {
+            var add = match
+            add.merge(attributes) { _, new in new }
+            SecItemAdd(add as CFDictionary, nil)
+        }
+    }
+
+    static func delete(_ account: String) {
+        let query: [String: Any] = [
+            kSecClass as String:       kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }
