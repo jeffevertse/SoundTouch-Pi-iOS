@@ -17,18 +17,23 @@ enum APIError: LocalizedError {
     }
 }
 
-// MARK: - Cert pinning delegate
+// MARK: - Cert pinning delegate (trust-on-first-use)
 
+/// Pins the Pi's TLS public key on the first successful connection and refuses
+/// any later key change. Because each Pi serves its own self-signed cert, there
+/// is nothing to ship in the app: the first connection establishes trust (TOFU),
+/// and from then on a changed key (possible MITM, or a Pi reinstall/cert regen)
+/// is rejected until the user explicitly re-trusts via Settings.
 final class PinningDelegate: NSObject, URLSessionDelegate {
     static let shared = PinningDelegate()
 
-    private let pinnedKey: SecKey? = {
-        guard let url = Bundle.main.url(forResource: "soundtouch-pi", withExtension: "cer"),
-              let data = try? Data(contentsOf: url),
-              let cert = SecCertificateCreateWithData(nil, data as CFData)
-        else { return nil }
-        return SecCertificateCopyKey(cert)
-    }()
+    private static let pinKey = "soundtouch_pi_pinned_pubkey"
+
+    /// Whether a key has been pinned (used to label the Settings action).
+    static var hasPinnedCertificate: Bool { KeychainStore.read(pinKey) != nil }
+
+    /// Forget the pinned key so the server is re-trusted on the next connection.
+    static func forgetPinnedCertificate() { KeychainStore.delete(pinKey) }
 
     func urlSession(
         _ session: URLSession,
@@ -36,24 +41,30 @@ final class PinningDelegate: NSObject, URLSessionDelegate {
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-              let serverTrust = challenge.protectionSpace.serverTrust,
-              let serverCert  = SecTrustCopyCertificateChain(serverTrust) as? [SecCertificate],
-              let firstCert   = serverCert.first,
-              let serverKey   = SecCertificateCopyKey(firstCert),
-              let pinned      = pinnedKey
+              let serverTrust   = challenge.protectionSpace.serverTrust,
+              let chain         = SecTrustCopyCertificateChain(serverTrust) as? [SecCertificate],
+              let leaf          = chain.first,
+              let serverKey     = SecCertificateCopyKey(leaf),
+              let serverKeyData = SecKeyCopyExternalRepresentation(serverKey, nil) as Data?
         else {
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
 
-        // Compare public key data — tolerates cert renewal as long as the key matches
-        let serverKeyData = SecKeyCopyExternalRepresentation(serverKey, nil) as Data?
-        let pinnedKeyData = SecKeyCopyExternalRepresentation(pinned,     nil) as Data?
+        // Pin the public key (tolerates cert renewal as long as the key is the same).
+        let fingerprint = serverKeyData.base64EncodedString()
 
-        if serverKeyData == pinnedKeyData {
-            completionHandler(.useCredential, URLCredential(trust: serverTrust))
+        if let pinned = KeychainStore.read(Self.pinKey) {
+            if pinned == fingerprint {
+                completionHandler(.useCredential, URLCredential(trust: serverTrust))
+            } else {
+                // Key changed — refuse. User can re-trust from Settings.
+                completionHandler(.cancelAuthenticationChallenge, nil)
+            }
         } else {
-            completionHandler(.cancelAuthenticationChallenge, nil)
+            // First connection — trust on first use and remember the key.
+            KeychainStore.save(fingerprint, account: Self.pinKey)
+            completionHandler(.useCredential, URLCredential(trust: serverTrust))
         }
     }
 }

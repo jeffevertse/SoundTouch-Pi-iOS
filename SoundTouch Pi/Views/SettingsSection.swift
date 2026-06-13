@@ -59,6 +59,23 @@ struct SettingsSection: View {
                         .disabled(authToken.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 .padding(.horizontal, 16).padding(.vertical, 10)
+
+                Divider().padding(.leading, 56)
+
+                Button { forgetCert() } label: {
+                    HStack(spacing: 12) {
+                        iconBadge("lock.slash", color: Color(uiColor: .systemGray))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Forget Trusted Certificate")
+                                .foregroundStyle(.primary)
+                            Text("Re-trust the Pi on the next connection (after a reinstall)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                }
             }
             .background(Color(uiColor: .secondarySystemGroupedBackground))
             .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -350,6 +367,11 @@ struct SettingsSection: View {
         APIClient.shared.authToken = token
         vm.toast("Token saved")
         Task { await vm.loadAll() }
+    }
+
+    private func forgetCert() {
+        PinningDelegate.forgetPinnedCertificate()
+        vm.toast("Trusted certificate cleared")
     }
 
     private func updateTapped() async {
