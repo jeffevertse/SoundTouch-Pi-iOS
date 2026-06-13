@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  build:
+  test:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -14,13 +14,9 @@ jobs:
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
-      - name: Build (iOS Simulator, no signing)
+      - name: Test (iOS Simulator)
         run: |
-          xcodebuild \
+          xcodebuild test \
             -project "SoundTouch Pi.xcodeproj" \
             -scheme "SoundTouch Pi" \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO \
-            build
+            -destination 'platform=iOS Simulator,name=iPhone 16'
