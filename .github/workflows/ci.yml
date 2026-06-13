@@ -16,7 +16,9 @@ jobs:
           xcode-version: latest-stable
       - name: Test (iOS Simulator)
         run: |
+          DEVICE=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [^(]+' | sed 's/ *$//')
+          echo "Using simulator: $DEVICE"
           xcodebuild test \
             -project "SoundTouch Pi.xcodeproj" \
             -scheme "SoundTouch Pi" \
-            -destination 'platform=iOS Simulator,name=iPhone 16'
+            -destination "platform=iOS Simulator,name=$DEVICE"
